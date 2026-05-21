@@ -132,3 +132,12 @@ kubectl get pods -w
 minikube service sa-frontend-lb
 
 Введите любую фразу на английском языке в появившемся окне браузера и нажмите кнопку анализа.
+
+
+## Последующий запуск после всех настроек 
+
+### Терминал 1 (держать открытым):
+kubectl port-forward service/sa-web-app-lb 8080:80
+
+### Терминал 2:
+minikube service sa-frontend-lb
