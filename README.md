@@ -1,34 +1,32 @@
 # Анализ эмоциональности (Sentiment Analysis) на Kubernetes
 
-Лабораторная работа по курсу «Технологии интернет». Развертывание микросервисного приложения в кластере Kubernetes.
+Лабораторная работа по курсу «Технологии интернет». Развертывание микросервисного приложения в кластере Kubernetes с фиксированной сетевой связкой.
 
 ## Архитектура приложения
 
-Приложение состоит из трёх микросервисов:
+Приложение состоит из трёх микросервисов, упакованных в Docker-контейнеры и управляемых Kubernetes:
 
-| Микросервис | Язык | Назначение |
-|-------------|------|------------|
-| **sa-frontend** | React (JavaScript) | Пользовательский интерфейс. Принимает текст от пользователя и отображает результат анализа. |
-| **sa-webapp** | Java (Spring Boot) | Сервер приложений. Принимает запросы от фронтенда, передаёт их на анализ и возвращает результат. |
-| **sa-logic** | Python (Flask + TextBlob) | Ядро анализа. Определяет эмоциональную окраску текста (позитивная, негативная, нейтральная). |
+| Микросервис | Язык/Стек | Функция | Внутренний порт |
+|-------------|-----------|---------|-----------------|
+| **sa-frontend** | React (Nginx) | Пользовательский интерфейс (ввод текста, отображение результата) | 80 |
+| **sa-webapp** | Java (Spring Boot) | Сервер приложений, маршрутизация запросов | 8080 |
+| **sa-logic** | Python (Flask + TextBlob) | Ядро анализа эмоциональной окраски текста | 5000 |
 
 ### Схема взаимодействия
-Пользователь → [sa-frontend:80] → [sa-webapp:8080] → [sa-logic:5000] → ответ возвращается обратно
+Пользователь (Браузер) → [sa-frontend:80] → [sa-webapp:8080] → [sa-logic:5000] → ответ возвращается по цепочке
 
 Все сервисы упакованы в Docker-контейнеры и управляются Kubernetes.
 
 ## Предварительные требования
 
-Для локального запуска потребуются:
+- **Docker Desktop** (для сборки и запуска контейнеров)
+- **Minikube** (локальный кластер Kubernetes)
+- **kubectl** (клиент для управления кластером, устанавливается вместе с Minikube)
+- **Node.js и npm** (для сборки React-приложения)
+- **Аккаунт на Docker Hub** (для хранения образов)
+- **Git** (для клонирования репозитория)
 
-- **Docker Desktop** — для сборки и запуска контейнеров
-- **Minikube** — для локального кластера Kubernetes
-- **kubectl** — для управления кластером (устанавливается вместе с Minikube)
-- **Node.js и npm** — для сборки React-приложения
-- **Аккаунт на Docker Hub** — для хранения образов
-- **Git** — для клонирования репозитория
-
-## Быстрый старт
+## Инструкция по запуску
 
 ### 1. Клонирование репозитория
 
@@ -36,19 +34,29 @@ git clone https://github.com/ВАШ_ЛОГИН/ИМЯ_РЕПОЗИТОРИЯ.git
 cd ИМЯ_РЕПОЗИТОРИЯ
 
 ### 2. Сборка и публикация Docker-образов
+
 Войдите в Docker Hub:
 
 docker login -u ВАШ_DOCKER_ID
 
+Все команды ниже выполняются из корня проекта. ВАШ_DOCKER_ID нужно заменить на ваш логин в Docker Hub (например, suchumichail).
+
+#### SA-Logic (Python-анализатор)
+
 cd sa-logic
 docker build -f Dockerfile -t ВАШ_DOCKER_ID/sentiment-analysis-logic .
 docker push ВАШ_DOCKER_ID/sentiment-analysis-logic
+
+#### SA-WebApp (Java-сервер)
+
+Из-за недоступности старых Java-образов используется готовая сборка автора с последующей перепривязкой к вашему аккаунту.
 
 cd ..\sa-webapp
 docker pull rinormaloku/sentiment-analysis-web-app
 docker tag rinormaloku/sentiment-analysis-web-app ВАШ_DOCKER_ID/sentiment-analysis-web-app
 docker push ВАШ_DOCKER_ID/sentiment-analysis-web-app
 
+#### SA-Frontend (React-интерфейс)
 
 cd ..\sa-frontend
 npm install
@@ -56,26 +64,20 @@ npm run build
 docker build -f Dockerfile -t ВАШ_DOCKER_ID/sentiment-analysis-frontend .
 docker push ВАШ_DOCKER_ID/sentiment-analysis-frontend
 
-### 3. Запуск Kubernetes-кластера
+### 3. Запуск кластера и развертывание
 
 minikube start
-
-
-### 4. Развертывание в Kubernetes
-
-Все манифесты находятся в папке resource-manifests.
-
 cd ..\resource-manifests
 
-#### 4.1. Развертывание Python-сервиса (sa-logic)
+#### Развертывание Python-сервиса
 kubectl apply -f sa-logic-deployment.yaml
 kubectl apply -f service-sa-logic.yaml
 
-#### 4.2. Развертывание Java-сервиса (sa-webapp)
+#### Развертывание Java-сервиса
 kubectl apply -f sa-web-app-deployment.yaml
 kubectl apply -f service-sa-web-app-lb.yaml
 
-#### 4.3. Развертывание React-сервиса (sa-frontend)
+#### Развертывание React-фронтенда
 kubectl apply -f sa-frontend-deployment.yaml
 kubectl apply -f service-sa-frontend-lb.yaml
 
@@ -85,59 +87,55 @@ kubectl get pods
 
 Все поды должны быть в статусе Running.
 
+### 4. Настройка связи фронтенда с бэкендом
 
-### 5. Настройка и обновление фронтенда
-На этом этапе фронтенд запущен, но ещё не знает адрес Java-сервиса. Нужно получить URL и обновить образ.
+В браузере мы используем фиксированный порт 8080, который пробрасывается к Java-сервису. Это гарантирует, что адрес не изменится после перезапуска Minikube.
 
-minikube service sa-web-app-lb
+#### 4.1. Обновите URL в коде фронтенда
 
-Оставьте этот терминал открытым! Туннель работает только пока процесс активен.
+В файле sa-frontend/src/App.js найдите строку с fetch и установите:
 
-Скопируйте URL из вывода (например, http://127.0.0.1:65045).
+fetch('http://127.0.0.1:8080/sentiment', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sentence: this.state.sentence })
+})
 
-В файле sa-frontend/src/App.js найдите строку:
-
-`fetch('http://192.168.99.100:31691/sentiment', {`
-
-Замените URL на скопированный адрес (сохраняя /sentiment в конце):
-
-`fetch('http://127.0.0.1:65045/sentiment', {`
-
-В новом окне терминала:
+#### 4.2. Пересоберите образ
 
 cd ..\sa-frontend
 npm run build
-docker build -f Dockerfile -t ВАШ_DOCKER_ID/sentiment-analysis-frontend:minikube .
-docker push ВАШ_DOCKER_ID/sentiment-analysis-frontend:minikube
+docker build -f Dockerfile -t ВАШ_DOCKER_ID/sentiment-analysis-frontend:v2 .
+docker push ВАШ_DOCKER_ID/sentiment-analysis-frontend:v2
 
-В файле resource-manifests/sa-frontend-deployment.yaml замените строку:
+#### 4.3. Обновите манифест развертывания
 
-- image: rinormaloku/sentiment-analysis-frontend
+В файле resource-manifests/sa-frontend-deployment.yaml замените строку с образом:
 
-на:
+- image: ВАШ_DOCKER_ID/sentiment-analysis-frontend:v2
 
-- image: ВАШ_DOCKER_ID/sentiment-analysis-frontend:minikube
-
-Примените изменения:
+И примените изменения:
 
 cd ..\resource-manifests
 kubectl apply -f sa-frontend-deployment.yaml
+kubectl rollout restart deployment sa-frontend
 
-Дождитесь обновления подов:
+### 5. Запуск приложения
 
-kubectl get pods -w
+Для работы приложения нужно держать открытыми два окна терминала.
 
-### 6. Открытие приложения
+#### Терминал 1 (держать открытым всегда):
 
-minikube service sa-frontend-lb
-
-Введите любую фразу на английском языке в появившемся окне браузера и нажмите кнопку анализа.
-
-
-## Последующий запуск после всех настроек 
-
-### Терминал 1 (держать открытым):
 kubectl port-forward service/sa-web-app-lb 8080:80
 
-### Терминал 2:
+Это свяжет порт 8080 на вашем компьютере с Java-сервисом внутри кластера.
+
+#### Терминал 2:
+
 minikube service sa-frontend-lb
+
+Откроет браузер с вашим приложением.
+
+### 6. Тестирование
+
+Введите в открывшемся приложении любую фразу на английском языке и нажмите кнопку анализа.
